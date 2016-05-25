@@ -1,0 +1,12 @@
+#!/usr/bin/python
+# vim: syntax=python tabstop=8 expandtab shiftwidth=4 softtabstop=4
+import sys
+
+with open(sys.argv[1]) as msg:
+    text = msg.read()
+    if not text.startswith("BEL-") and not text.startswith("ASPM-") and not text.startswith("MIAR-") and not text.startswith("IHM-") and not text.startswith("IM-") and not text.startswith("UEM-") and not text.startswith("US-") and not text.startswith("QE-"):
+        print("***** ERROR: You must supply a Jira BEL/ASPM/MIAR/IHM/IM/UEM/US/QE ticket. Commit Aborted!!!")
+        print("***** ERROR: You must supply a Jira BEL/ASPM/MIAR/IHM/IM/UEM/US/QE ticket. Commit Aborted!!!")
+        print("***** ERROR: You must supply a Jira BEL/ASPM/MIAR/IHM/IM/UEM/US/QE ticket. Commit Aborted!!!")
+        sys.exit(1)
+sys.exit(0)

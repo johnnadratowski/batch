@@ -1,0 +1,65 @@
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+*.so
+
+# Folders
+_obj
+_test
+/src
+/bin
+/pkg
+
+# Architecture specific extensions/prefixes
+*.[568vq]
+[568vq].out
+
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+
+_testmain.go
+
+*.exe
+*.test
+*.prof
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Prevent checking in the pmn executable if it gets built to the root
+/pmn
+
+# Vagrant
+/.vagrant
+/Vagrantfile
+
+# AWS Ignores
+.elasticbeanstalk/
+
+# IntelliJ Ignores
+.idea/
+atlassian-ide-plugin.xml
+
+# Apple ignores
+.DS_Store
+
+# Vim ignores
+tags
+
+# Used to override how the platform-ui runs it's instance in vagrant.
+# Can override the usual supervisor.conf file
+supervisor.conf-local
+
+# Golang test coverage files
+*.coverprofile
+*.coverprofile.*
+
+# JUnit test report files
+*.xml
+
+# Intellij project file
+*.iml
