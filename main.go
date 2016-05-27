@@ -30,6 +30,10 @@ func InitializeConfig() {
 		// Batch options
 		"max_batch_requests":     config.EnvDefault("MAX_BATCH_REQUESTS", "100"),
 		"max_batch_requests_async":     config.EnvDefault("MAX_BATCH_REQUESTS_ASYNC", "10000"),
+
+		// Zookeeper/Kafka options
+		"zookeeper": config.EnvDefault("ZOOKEEPER", "localhost:2181"),
+		"async_topic": config.EnvDefault("ASYNC_TOPIC", "batch_asyc"),
 	}
 
 	for _, envVar := range os.Environ() {

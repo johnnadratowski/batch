@@ -34,6 +34,38 @@ else
 fi
 
 ###############################################
+######### KAFKA/ZOOKEEPER
+###############################################
+
+if ! command -v java >/dev/null 2>&1; then
+  echo "INSTALL JAVA/SCALA"
+  apt-get -y install scala
+fi
+
+if [ ! -e /srv/unified/kafka/bin/zookeeper-server-start.sh ]; then
+    mkdir -p /srv/unified/kafka
+    cd /srv/unified/kafka
+    wget -q http://apache.claz.org/kafka/0.10.0.0/kafka_2.11-0.10.0.0.tgz
+    tar xzf kafka_2.11-0.10.0.0.tgz
+    cd kafka_2.11-0.10.0.0/
+    echo "listeners=PLAINTEXT://192.168.50.7:9092" >> config/server.properties
+    echo "advertised.listeners=PLAINTEXT://192.168.50.7:9092" >> config/server.properties
+fi
+
+./bin/zookeeper-server-start.sh -daemon config/zookeeper.properties
+./bin/kafka-server-start.sh -daemon config/server.properties
+
+
+###############################################
+######### REDIS
+###############################################
+
+if ! command -v redis-server >/dev/null 2>&1; then
+  echo "INSTALL REDIS"
+  apt-get -y install redis-server
+fi
+
+###############################################
 ######### BUILD STEPS
 ###############################################
 

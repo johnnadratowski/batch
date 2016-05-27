@@ -38,6 +38,7 @@ func Router() (root *web.Router) {
 	batchRoot.Middleware(commonMW.SetHeaders)
 
 	batchRoot.Post("/batch", controller.Batch)
+	batchRoot.Post("/batch/async", controller.AsyncBatch)
 
 	return
 }

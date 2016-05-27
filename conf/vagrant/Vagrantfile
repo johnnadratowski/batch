@@ -15,7 +15,18 @@ Vagrant.configure(BATCH_VAGRANT_VERSION) do |config|
     end
 
     batch.vm.network "private_network", ip: "192.168.50.7"
+
+    # BATCH API
     batch.vm.network "forwarded_port", guest: 8087, host: 58087, auto_correct: true
+
+    # ZOOKEEPER
+    batch.vm.network "forwarded_port", guest: 2181, host: 2181, auto_correct: true
+
+    # KAFKA
+    batch.vm.network "forwarded_port", guest: 9092, host: 9092, auto_correct: true
+
+    # REDIS
+    batch.vm.network "forwarded_port", guest: 6379, host: 6379, auto_correct: true
 
     batch.vm.synced_folder "../batch", "/srv/unified/batch/"
     batch.vm.synced_folder "/tmp", "/tmp/scratch"

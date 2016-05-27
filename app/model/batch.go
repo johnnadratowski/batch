@@ -8,18 +8,29 @@ import (
 	"strings"
 
 	"github.com/Unified/pmn/lib/errors"
+	"github.com/Shopify/sarama"
+	"github.com/Unified/pmn/lib/config"
+	"github.com/pborman/uuid"
 )
 
 var HostMap map[string]string
 
+// Interface for the http method "Do", useful for mocking requests/responses
+type BatchClient interface {
+	Do (req *http.Request) (resp *http.Response, err error)
+}
+
+// The response for a single item in a batch
 type BatchResponseItem struct {
 	Code    int               `json:"code"`
 	Body    interface{}       `json:"body"`
 	Headers map[string]string `json:"headers"`
 }
 
+// The list of responses for all of the batch item requests
 type BatchResponse []BatchResponseItem
 
+// A single batch item request
 type BatchItem struct {
 	Method  string            `json:"method"`
 	URL     string            `json:"url"`
@@ -27,8 +38,8 @@ type BatchItem struct {
 	Headers map[string]string `json:"headers"`
 }
 
-// Get the URL to hit for the batch item
-func (batchItem BatchItem) FullURL() (string, *errors.JsonError) {
+// Get the URL to hit for an internal request batch item
+func (batchItem BatchItem) InternalURL() (string, *errors.JsonError) {
 	parts := strings.SplitN(batchItem.URL, "://", 1)
 	domain, found := HostMap[parts[0]]
 	if ! found {
@@ -36,20 +47,23 @@ func (batchItem BatchItem) FullURL() (string, *errors.JsonError) {
 		return "", errors.New("Unrecognized service: %s", 400, parts[0])
 	}
 
+	if !strings.HasSuffix(domain, "/") {
+		domain += "/"
+	}
 	return domain + parts[1], nil
 }
 
-// Create a request for this batch item
-func (batchItem BatchItem) NewRequest(identityID string) (*http.Request, *errors.JsonError) {
+// Create a request for this internal request batch item
+func (batchItem BatchItem) NewInternalRequest(identityID string) (*http.Request, *errors.JsonError) {
 	data, _ := json.Marshal(batchItem.Body)
-	url, jsonErr := batchItem.FullURL()
+	url, jsonErr := batchItem.InternalURL()
 	if jsonErr != nil {
 		return nil, jsonErr
 	}
 
-	request, err := http.NewRequest(batchItem.Method, url, bytes.NewBuffer(data))
+	request, err := http.NewRequest(strings.ToUpper(batchItem.Method), url, bytes.NewBuffer(data))
 	if err != nil {
-		log.Printf("An error occurred making the new batch request: %s", err)
+		log.Printf("An error occurred making the new internal batch request: %s", err)
 		return nil, errors.New("An Internal Server error occurred making the request", 500)
 	}
 
@@ -60,9 +74,25 @@ func (batchItem BatchItem) NewRequest(identityID string) (*http.Request, *errors
 	return request, nil
 }
 
+// Create a request for this external request batch item
+func (batchItem BatchItem) NewExternalRequest(identityID string) (*http.Request, *errors.JsonError) {
+	data, _ := json.Marshal(batchItem.Body)
+
+	request, err := http.NewRequest(strings.ToUpper(batchItem.Method), batchItem.URL, bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("An error occurred making the new external batch request: %s", err)
+		return nil, errors.New("An Internal Server error occurred making the request", 500)
+	}
+
+	for header, val := range batchItem.Headers {
+		request.Header.Add(header, val)
+	}
+
+	return request, nil
+}
 // Make a request for this batch item
 func (batchItem BatchItem) Do(request *http.Request) (BatchResponseItem, error) {
-	client := &http.Client{}
+	client := GetRequestClient()
 	response, err := client.Do(request)
 	if err != nil {
 		log.Printf("An error occurred calling the new batch request: %s", err)
@@ -82,23 +112,38 @@ func (batchItem BatchItem) Do(request *http.Request) (BatchResponseItem, error) 
 	return responseItem, nil
 }
 
-type BatchItems []BatchItem
-
 // Request a single item from the BatchItems
-func (batchItems BatchItems) RequestItem(batchItem BatchItem, response chan interface{}, identityID string) {
-	request, jsonErr := batchItem.NewRequest(identityID)
-	if jsonErr != nil {
-		log.Printf("An error occurred creating request: %s %+v", jsonErr, batchItem)
-		response <- jsonErr
+func (batchItem BatchItem) RequestItem(response chan interface{}, identityID string) {
+	var request *http.Request
+	var jsonErr *errors.JsonError
+	if strings.HasPrefix(batchItem.URL, "http") {
+		// Represents a request to an external system
+		request, jsonErr = batchItem.NewExternalRequest(identityID)
+		if jsonErr != nil {
+			log.Printf("An error occurred creating request: %s %+v", jsonErr, batchItem)
+			response <- jsonErr
+			return
+		}
+	} else {
+		// Represents a request to an internal system
+		request, jsonErr = batchItem.NewInternalRequest(identityID)
+		if jsonErr != nil {
+			log.Printf("An error occurred creating request: %s %+v", jsonErr, batchItem)
+			response <- jsonErr
+			return
+		}
 	}
 	responseItem, err := batchItem.Do(request)
 	if err != nil {
 		log.Printf("An error occurred making request: %s %+v", err, batchItem)
 		response <- err
+		return
 	}
 
 	response <- responseItem
 }
+
+type BatchItems []BatchItem
 
 // Create an error message for the batch item
 func (batchItems BatchItems) MakeError(code int, jsonErr *errors.JsonError) BatchResponseItem {
@@ -114,7 +159,7 @@ func (batchItems BatchItems) RunBatch(identityID string) (BatchResponse) {
 	batchResponseChans := make([]chan interface{}, len(batchItems))
 	for idx, batchItem := range batchItems {
 		batchResponseChans[idx] = make(chan interface{})
-		go batchItems.RequestItem(batchItem, batchResponseChans[idx], identityID)
+		go batchItem.RequestItem(batchResponseChans[idx], identityID)
 	}
 
 	batchResponse := make(BatchResponse, len(batchItems))
@@ -132,4 +177,51 @@ func (batchItems BatchItems) RunBatch(identityID string) (BatchResponse) {
 	}
 
 	return batchResponse
+}
+
+// Struct used to write to kafka an asynchronous batch item request
+type AsyncBatchItem struct {
+	RequestID string `json:"requestId"`
+	Index int `json:"idx"`
+	Item BatchItem `json:"item"`
+}
+
+// Runs all of the jobs in this list of batch items
+func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.JsonError) {
+
+	producer, err := NewAsyncBatchProducer()
+	if err != nil {
+		return "", errors.New("An internal server error occurred.", 500)
+	}
+	defer producer.Close()
+
+	requestID := uuid.New()
+	for idx, batchItem := range batchItems {
+		asyncItem := AsyncBatchItem{
+				RequestID: requestID,
+				Index: idx,
+				Item: batchItem,
+			}
+		output, _ := json.Marshal(asyncItem)
+		message := &sarama.ProducerMessage{
+			Topic: config.Get("async_topic"),
+			Key: sarama.ByteEncoder(identityID + batchItem.URL),
+			Value: sarama.ByteEncoder(output),
+		}
+
+		partition, offset, err := producer.SendMessage(message)
+		if err != nil {
+			log.Println("An error occurred sending message to Kafka")
+			return "", errors.New("An internal server error occurred.", 500)
+		} else {
+			log.Printf("Items successfully sent: [parition: %s] (offset: %s)", partition, offset)
+		}
+	}
+
+	return requestID, nil
+}
+
+// Get the client to use for the http requests
+var GetRequestClient = func() (BatchClient) {
+	return &http.Client{}
 }
