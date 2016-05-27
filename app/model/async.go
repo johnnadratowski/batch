@@ -105,6 +105,7 @@ func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
 			finished <- true
 			return
 		case <-time.After(time.Duration(config.GetInt("worker_sleep")) * time.Millisecond):
+			log.Println("Finished wait time, starting to consume messages. Worker num: ", workerNum)
 			consumeMessages(consumer, redis)
 		}
 
@@ -133,68 +134,68 @@ func consumeMessages(consumer *consumergroup.ConsumerGroup, redis *redis.Client)
 				message.Value,
 				err)
 			continue
-
-			redisCheckCmd := redis.LIndex(batchItem.RequestID, batchItem.Index)
-			checkResult, err := redisCheckCmd.Result()
-			if err != nil {
-				log.Printf("An error occurred getting Redis info. [request ID: %s] [result: %s] (error: %s)", batchItem.RequestID, checkResult, err)
-				continue
-			}
-
-			if checkResult != "" {
-				log.Printf("Batch Item already processed: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-					batchItem.RequestID,
-					batchItem.Index,
-					message.Key,
-					message.Offset,
-					message.Partition,
-					message.Topic,
-					message.Value)
-				continue
-			}
-
-			response, jsonErr := batchItem.Item.RequestItem(batchItem.IdentityID)
-			if jsonErr != nil {
-				log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-					batchItem.RequestID,
-					message.Key,
-					message.Offset,
-					message.Partition,
-					message.Topic,
-					message.Value)
-				response = BatchResponseItem{
-					Code: 500,
-					Body: jsonErr,
-				}
-			}
-
-			responseJson, _ := json.Marshal(response)
-			redisPutCmd := redis.LSet(batchItem.RequestID, batchItem.Index, string(responseJson))
-			putResult, err := redisPutCmd.Result()
-			if err != nil {
-				log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
-					batchItem.RequestID,
-					batchItem.Index,
-					message.Key,
-					message.Offset,
-					message.Partition,
-					message.Topic,
-					message.Value,
-					err)
-			} else {
-				log.Printf("Successfully processed batch item: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
-					batchItem.RequestID,
-					batchItem.Index,
-					message.Key,
-					message.Offset,
-					message.Partition,
-					message.Topic,
-					message.Value,
-					putResult)
-			}
-
-			consumer.CommitUpto(message)
 		}
+
+		redisCheckCmd := redis.LIndex(batchItem.RequestID, batchItem.Index)
+		checkResult, err := redisCheckCmd.Result()
+		if err != nil {
+			log.Printf("An error occurred getting Redis info. [request ID: %s] [result: %s] (error: %s)", batchItem.RequestID, checkResult, err)
+			continue
+		}
+
+		if checkResult != "" {
+			log.Printf("Batch Item already processed: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
+				batchItem.RequestID,
+				batchItem.Index,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value)
+			continue
+		}
+
+		response, jsonErr := batchItem.Item.RequestItem(batchItem.IdentityID)
+		if jsonErr != nil {
+			log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
+				batchItem.RequestID,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value)
+			response = BatchResponseItem{
+				Code: 500,
+				Body: jsonErr.Msg(),
+			}
+		}
+
+		responseJson, _ := json.Marshal(response)
+		redisPutCmd := redis.LSet(batchItem.RequestID, batchItem.Index, string(responseJson))
+		putResult, err := redisPutCmd.Result()
+		if err != nil {
+			log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
+				batchItem.RequestID,
+				batchItem.Index,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value,
+				err)
+		} else {
+			log.Printf("Successfully processed batch item: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
+				batchItem.RequestID,
+				batchItem.Index,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value,
+				putResult)
+		}
+
+		consumer.CommitUpto(message)
 	}
 }
 

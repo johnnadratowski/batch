@@ -46,7 +46,7 @@ func InitializeConfig() {
 		// Workers
 		"workers":     config.EnvDefault("WORKERS", "0"),
 		"worker_sleep":     config.EnvDefault("WORKER_SLEEP", "500"),
-		"head_offsets": config.EnvDefault("HEAD_OFFSETS", "-1"),
+		"head_offsets": config.EnvDefault("HEAD_OFFSETS", "-2"),
 		"reset_offsets": config.EnvDefault("RESET_OFFSETS", "false"),
 		"consumer_group": config.EnvDefault("CONSUMER_GROUP", "batch_async"),
 	}

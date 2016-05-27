@@ -83,7 +83,7 @@ ASYNC_EXPIRE=60 # Expiration time for new async request, in minutes
 # Workers
 WORKERS=0 # The number of async workers to start with the webserver
 WORKER_SLEEP=500 # Number of milliseconds to sleep between worker processing
-HEAD_OFFSETS=-1 # Set to the offset to start at. Defaults to the newest offset for the consumer group. Set to -2 to start at the oldest offset for the group
+HEAD_OFFSETS=-2 # Set to the offset to start at. Defaults to the oldest offset for the consumer group. Set to -1 to start at the newest offset for the group
 RESET_OFFSETS=false # Set this to true to reset the offsets for the consumer group
 CONSUMER_GROUP=batch_async # the consumer group to use for the worker
 ```
