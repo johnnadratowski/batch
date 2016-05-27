@@ -13,6 +13,7 @@ import (
 	"github.com/pborman/uuid"
 )
 
+// Contains the mapping for internal services - like "pmn": "http://pmn-load-balancer:80/"
 var HostMap map[string]string
 
 // Interface for the http method "Do", useful for mocking requests/responses

@@ -61,37 +61,84 @@ func StartAsyncWorker() {
 
 		redis := GetAsyncJobRedis()
 
-		for message := range consumer.Messages() {
-			var batchItem AsyncBatchItem
-			err = json.Unmarshal(message.Value, &batchItem)
-			if err != nil {
-				log.Printf("This shouldn't happen. We put this JSON into the Kafka queue and it should always be properly formatted. [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-					message.Key,
-					message.Offset,
-					message.Partition,
-					message.Topic,
-					message.Value)
-				continue
-			}
+		consumeMessages(consumer, redis)
+	}
+}
 
-			redisCmd := redis.LIndex(batchItem.RequestID, batchItem.Index)
-			result, err := redisCmd.Result()
-			if err != nil {
-				log.Printf("An error occurred getting Redis info for request ID %s. [error: %s]", batchItem.RequestID, err)
-				continue
-			}
+func consumeMessages(consumer *consumergroup.ConsumerGroup, redis *redis.Client) {
 
-			if result != "" {
-				log.Printf("Batch Item already processed: [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-					message.Key,
-					message.Offset,
-					message.Partition,
-					message.Topic,
-					message.Value)
-				continue
-			}
-
-			batchItem.Item.RequestItem(batchItem.IdentityID)
+	for message := range consumer.Messages() {
+		var batchItem AsyncBatchItem
+		err := json.Unmarshal(message.Value, &batchItem)
+		if err != nil {
+			log.Printf("This shouldn't happen. We put this JSON into the Kafka queue and it should always be properly formatted. [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value,
+				err)
+			continue
 		}
+
+		redisCheckCmd := redis.LIndex(batchItem.RequestID, batchItem.Index)
+		checkResult, err := redisCheckCmd.Result()
+		if err != nil {
+			log.Printf("An error occurred getting Redis info for request ID %s. [error: %s]", batchItem.RequestID, err)
+			continue
+		}
+
+		if checkResult != "" {
+			log.Printf("Batch Item already processed: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
+				batchItem.RequestID,
+				batchItem.Index,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value)
+			continue
+		}
+
+		response, jsonErr := batchItem.Item.RequestItem(batchItem.IdentityID)
+		if jsonErr != nil {
+			log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
+				batchItem.RequestID,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value)
+			response = BatchResponseItem{
+				Code: 500,
+				Body: jsonErr,
+			}
+		}
+
+		responseJson, _ := json.Marshal(response)
+		redisPutCmd := redis.LSet(batchItem.RequestID, batchItem.Index, string(responseJson))
+		putResult, err := redisPutCmd.Result()
+		if err != nil {
+			log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
+				batchItem.RequestID,
+				batchItem.Index,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value,
+				err)
+		} else {
+			log.Printf("Successfully processed batch item: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
+				batchItem.RequestID,
+				batchItem.Index,
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value,
+				putResult)
+		}
+
 	}
 }
