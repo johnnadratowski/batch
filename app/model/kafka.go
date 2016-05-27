@@ -2,11 +2,11 @@ package model
 
 import (
 	"github.com/Shopify/sarama"
-	"github.com/wvanbergen/kazoo-go"
-	"time"
-	"log"
 	"github.com/wvanbergen/kafka/consumergroup"
+	"github.com/wvanbergen/kazoo-go"
+	"log"
 	"strings"
+	"time"
 )
 
 // NewAsyncBatchProducer gets a new producer instance for producing batch item messages to kafka
@@ -41,7 +41,6 @@ var NewAsyncBatchProducer = func(zookeeperConn string) (sarama.SyncProducer, err
 	return producer, nil
 }
 
-
 // creates the task consumer for the kafka queues
 func NewAsyncBatchConsumer(zookeeperConn, consumerGroup, topic string, headOffset int64, resetOffsets bool) (*consumergroup.ConsumerGroup, error) {
 
@@ -67,4 +66,3 @@ func NewAsyncBatchConsumer(zookeeperConn, consumerGroup, topic string, headOffse
 
 	return consumer, nil
 }
-

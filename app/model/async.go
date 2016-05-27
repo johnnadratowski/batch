@@ -1,27 +1,27 @@
 package model
 
 import (
+	"encoding/json"
+	"github.com/Shopify/sarama"
+	"github.com/Unified/pmn/lib/config"
+	"github.com/Unified/pmn/lib/errors"
+	"github.com/wvanbergen/kafka/consumergroup"
+	"gopkg.in/redis.v2"
 	"log"
 	"net/http"
 	"time"
-	"gopkg.in/redis.v2"
-	"github.com/Unified/pmn/lib/config"
-	"github.com/Shopify/sarama"
-	"github.com/wvanbergen/kafka/consumergroup"
-	"encoding/json"
-	"github.com/Unified/pmn/lib/errors"
 )
 
 // Struct used to write to kafka an asynchronous batch item request
 type AsyncBatchItem struct {
-	RequestID string `json:"requestId"`
-	Index int64 `json:"idx"`
-	Item BatchItem `json:"item"`
-	IdentityID string `json:"identityId"`
+	RequestID  string    `json:"requestId"`
+	Index      int64     `json:"idx"`
+	Item       BatchItem `json:"item"`
+	IdentityID string    `json:"identityId"`
 }
 
 // Get a redis instance for the async jobs
-var GetAsyncJobRedis = func() (*redis.Client) {
+var GetAsyncJobRedis = func() *redis.Client {
 	return NewRedisClient(config.Get("redis_host"),
 		config.Get("redis_port"),
 		config.Get("redis_password"),
@@ -33,7 +33,6 @@ var GetAsyncBatchProducer = func() (sarama.SyncProducer, error) {
 	return NewAsyncBatchProducer(config.Get("zookeeper"))
 }
 
-
 // Get the kafka consumer for asynchronous batch requests
 var GetAsyncBatchConsumer = func() (*consumergroup.ConsumerGroup, error) {
 	return NewAsyncBatchConsumer(config.Get("zookeeper"),
@@ -44,7 +43,7 @@ var GetAsyncBatchConsumer = func() (*consumergroup.ConsumerGroup, error) {
 }
 
 // Get the client to use for the http requests
-var GetRequestClient = func() (BatchClient) {
+var GetRequestClient = func() BatchClient {
 	return &http.Client{}
 }
 
@@ -116,12 +115,12 @@ func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
 // Process a single consumer message
 func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.ConsumerGroup, redis *redis.Client) {
 
-	log.Println("Got message: [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
-			message.Key,
-			message.Offset,
-			message.Partition,
-			message.Topic,
-			message.Value)
+	log.Printf("Got message: [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
+		message.Key,
+		message.Offset,
+		message.Partition,
+		message.Topic,
+		message.Value)
 
 	var batchItem AsyncBatchItem
 	err := json.Unmarshal(message.Value, &batchItem)
@@ -174,7 +173,7 @@ func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.Con
 	redisPutCmd := redis.LSet(batchItem.RequestID, batchItem.Index, string(responseJson))
 	putResult, err := redisPutCmd.Result()
 	if err != nil {
-		log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
+		log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
 			batchItem.RequestID,
 			batchItem.Index,
 			message.Key,
@@ -184,7 +183,7 @@ func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.Con
 			message.Value,
 			err)
 	} else {
-		log.Printf("Successfully processed batch item: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
+		log.Printf("Successfully processed batch item: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
 			batchItem.RequestID,
 			batchItem.Index,
 			message.Key,
@@ -205,7 +204,7 @@ func RetreiveAsyncResponse(requestID string) (BatchResponse, *errors.JsonError) 
 	if err != nil {
 		log.Printf("An error occurred attempting to check if async batch request still exists: [request id: %s] (error: %s)", requestID, err)
 	} else {
-		log.Printf("Successfully retreived async job exists from redis. [request id: %s] (result: %s)", requestID, existsResult)
+		log.Printf("Successfully retreived async job exists from redis. [request id: %s] (result: %t)", requestID, existsResult)
 		if !existsResult {
 			return BatchResponse{}, errors.New("The async batch request can not be found.  It may have expired.", 410)
 		}

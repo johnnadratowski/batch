@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Unified/pmn/lib/errors"
 	"github.com/Shopify/sarama"
 	"github.com/Unified/pmn/lib/config"
+	"github.com/Unified/pmn/lib/errors"
 	"github.com/pborman/uuid"
 	"time"
 )
@@ -19,7 +19,7 @@ var HostMap map[string]string
 
 // Interface for the http method "Do", useful for mocking requests/responses
 type BatchClient interface {
-	Do (req *http.Request) (resp *http.Response, err error)
+	Do(req *http.Request) (resp *http.Response, err error)
 }
 
 // The response for a single item in a batch
@@ -44,7 +44,7 @@ type BatchItem struct {
 func (batchItem BatchItem) InternalURL() (string, *errors.JsonError) {
 	parts := strings.SplitN(batchItem.URL, "://", 2)
 	domain, found := HostMap[parts[0]]
-	if ! found {
+	if !found {
 		log.Printf("An error occurred getting the batch URL for %s. Service unrecognized.", batchItem.URL)
 		return "", errors.New("Unrecognized service: %s", 400, parts[0])
 	}
@@ -156,7 +156,7 @@ func (batchItem BatchItem) RequestItemAsync(response chan interface{}, identityI
 }
 
 // Request a single item from the BatchItems.  Meant to be used asynchronously using a channel.
-func (batchItem BatchItem) RequestItem(identityID string) (BatchResponseItem, *errors.JsonError){
+func (batchItem BatchItem) RequestItem(identityID string) (BatchResponseItem, *errors.JsonError) {
 	request, jsonErr := batchItem.NewRequest(identityID)
 	if jsonErr != nil {
 		return BatchResponseItem{}, jsonErr
@@ -182,7 +182,7 @@ func (batchItems BatchItems) MakeError(code int, jsonErr *errors.JsonError) Batc
 }
 
 // Runs all of the jobs in this list of batch items
-func (batchItems BatchItems) RunBatch(identityID string) (BatchResponse) {
+func (batchItems BatchItems) RunBatch(identityID string) BatchResponse {
 
 	batchResponseChans := make([]chan interface{}, len(batchItems))
 	for idx, batchItem := range batchItems {
@@ -219,24 +219,24 @@ func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.J
 	requestID := uuid.New()
 	for idx, batchItem := range batchItems {
 		asyncItem := AsyncBatchItem{
-				RequestID: requestID,
-				Index: int64(idx),
-				Item: batchItem,
-				IdentityID: identityID,
-			}
+			RequestID:  requestID,
+			Index:      int64(idx),
+			Item:       batchItem,
+			IdentityID: identityID,
+		}
 		output, _ := json.Marshal(asyncItem)
 		message := &sarama.ProducerMessage{
 			Topic: config.Get("topic"),
-			Key: sarama.ByteEncoder(identityID + batchItem.URL),
+			Key:   sarama.ByteEncoder(identityID + batchItem.URL),
 			Value: sarama.ByteEncoder(output),
 		}
 
 		partition, offset, err := producer.SendMessage(message)
 		if err != nil {
-			log.Println("An error occurred sending message to Kafka. (error: %s)", err)
+			log.Printf("An error occurred sending message to Kafka. (error: %s)", err)
 			return "", errors.New("An internal server error occurred.", 500)
 		} else {
-			log.Printf("Items successfully sent: [request id: %s] [parition: %s] (offset: %s)", requestID, partition, offset)
+			log.Printf("Items successfully sent: [request id: %s] [parition: %d] (offset: %d)", requestID, partition, offset)
 		}
 	}
 
@@ -252,13 +252,12 @@ func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.J
 		log.Printf("New async batch request successfully sent to redis: [request id: %s] [Num Items: %d]", requestID, pushResult)
 	}
 
-
-	expireCmd := redis.Expire(requestID, time.Duration(config.GetInt("async_expire")) * time.Minute)
+	expireCmd := redis.Expire(requestID, time.Duration(config.GetInt("async_expire"))*time.Minute)
 	expireResult, err := expireCmd.Result()
 	if err != nil {
-		log.Printf("An error occurred saving new request to Redis: [request id: %s] [Expire set?: %b] (error: %s)", requestID, expireResult, err)
+		log.Printf("An error occurred saving new request to Redis: [request id: %s] [Expire set?: %t] (error: %s)", requestID, expireResult, err)
 	} else {
-		log.Printf("Expiration on new async batch request successfully sent to redis: [request id: %s] [Expire set?: %d]", requestID, expireResult)
+		log.Printf("Expiration on new async batch request successfully sent to redis: [request id: %s] [Expire set?: %t]", requestID, expireResult)
 	}
 
 	return requestID, nil

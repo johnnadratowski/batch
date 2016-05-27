@@ -10,9 +10,9 @@ import (
 	"github.com/Unified/batch/app/command"
 	"github.com/Unified/batch/app/model"
 	"github.com/Unified/batch/app/route"
+	"github.com/Unified/batch/app/server"
 	"github.com/Unified/pmn/lib/config"
 	"github.com/codegangsta/cli"
-	"github.com/Unified/batch/app/server"
 )
 
 func main() {

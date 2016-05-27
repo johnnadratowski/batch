@@ -60,7 +60,7 @@ func AsyncBatch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 		return
 	}
 
-	rw.Header().Set("LOCATION", "/batch/async/" + requestID)
+	rw.Header().Set("LOCATION", "/batch/async/"+requestID)
 	rw.WriteHeader(202)
 }
 
@@ -70,9 +70,9 @@ func AsyncBatchRetrieve(c *context.Context, rw web.ResponseWriter, req *web.Requ
 	batchResponse, jsonErr := model.RetreiveAsyncResponse(requestID)
 	if jsonErr != nil {
 		jsonErr.Write(rw)
-	} else if len(batchResponse) == 0{
+	} else if len(batchResponse) == 0 {
 
-		rw.Header().Set("LOCATION", "/batch/async/" + requestID)
+		rw.Header().Set("LOCATION", "/batch/async/"+requestID)
 		rw.WriteHeader(202)
 	} else {
 		err := json.NewEncoder(rw).Encode(batchResponse)

@@ -14,9 +14,9 @@ import (
 
 	"github.com/codegangsta/cli"
 
-	"github.com/Unified/pmn/lib/config"
-	commandLib "github.com/Unified/pmn/lib/commands"
 	"github.com/Unified/batch/app/model"
+	commandLib "github.com/Unified/pmn/lib/commands"
+	"github.com/Unified/pmn/lib/config"
 	"os"
 	"os/signal"
 	"time"
