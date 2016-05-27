@@ -30,8 +30,8 @@ _testmain.go
 *.sublime-project
 *.sublime-workspace
 
-# Prevent checking in the pmn executable if it gets built to the root
-/pmn
+# Prevent checking in the batch executable if it gets built to the root
+/batch
 
 # Vagrant
 /.vagrant
