@@ -3,9 +3,10 @@ package model
 import (
 	"github.com/Shopify/sarama"
 	"github.com/wvanbergen/kazoo-go"
-	"github.com/Unified/pmn/lib/config"
 	"time"
 	"log"
+	"github.com/wvanbergen/kafka/consumergroup"
+	"strings"
 )
 
 // NewAsyncBatchProducer gets a new producer instance for producing batch item messages to kafka
@@ -39,3 +40,31 @@ var NewAsyncBatchProducer = func(zookeeperConn string) (sarama.SyncProducer, err
 
 	return producer, nil
 }
+
+
+// creates the task consumer for the kafka queues
+func NewAsyncBatchConsumer(zookeeperConn, consumerGroup, topic string, headOffset int64, resetOffsets bool) (*consumergroup.ConsumerGroup, error) {
+
+	kafkaConfig := consumergroup.NewConfig()
+	kafkaConfig.Offsets.Initial = headOffset
+	kafkaConfig.Offsets.ProcessingTimeout = 10 * time.Second
+	kafkaConfig.Offsets.ResetOffsets = resetOffsets
+
+	var zookeeperNodes []string
+	zookeeperNodes, kafkaConfig.Zookeeper.Chroot = kazoo.ParseConnectionString(zookeeperConn)
+
+	consumer, err := consumergroup.JoinConsumerGroup(consumerGroup, strings.Split(topic, ","), zookeeperNodes, kafkaConfig)
+	if err != nil {
+		log.Println("Error joining task consumergroup: ", err)
+		return nil, err
+	}
+
+	go func() {
+		for err := range consumer.Errors() {
+			log.Println("An error was received from the task consumer: ", err)
+		}
+	}()
+
+	return consumer, nil
+}
+

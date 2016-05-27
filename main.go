@@ -33,7 +33,7 @@ func InitializeConfig() {
 
 		// Zookeeper/Kafka options
 		"zookeeper": config.EnvDefault("ZOOKEEPER", "localhost:2181"),
-		"async_topic": config.EnvDefault("ASYNC_TOPIC", "batch_asyc"),
+		"topic": config.EnvDefault("TOPIC", "batch_asyc"),
 
 		// Redis
 		"redis_host":     config.EnvDefault("REDIS_HOST", "localhost"),
@@ -44,6 +44,9 @@ func InitializeConfig() {
 		// Workers
 		"workers":     config.EnvDefault("WORKERS", "0"),
 		"worker_sleep":     config.EnvDefault("WORKER_SLEEP", "500"),
+		"head_offsets": config.EnvDefault("HEAD_OFFSETS", "-1"),
+		"reset_offsets": config.EnvDefault("RESET_OFFSETS", "false"),
+		"consumer_group": config.EnvDefault("CONSUMER_GROUP", "batch_async"),
 	}
 
 	for _, envVar := range os.Environ() {
@@ -91,6 +94,14 @@ func main() {
 			MaxHeaderBytes: config.GetInt("max_header_bytes"),
 			Handler:        route.Router(),
 		}
+
+		numWorkers := config.GetInt("workers")
+		if numWorkers > 0 {
+			for i := 0; i < numWorkers; i++ {
+				go model.StartAsyncWorker()
+			}
+		}
+
 		err := server.ListenAndServe()
 		log.Printf("Exiting Batch Server: %s", err)
 	} else {

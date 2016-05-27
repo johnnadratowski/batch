@@ -11,7 +11,6 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/Unified/pmn/lib/config"
 	"github.com/pborman/uuid"
-	"github.com/Unified/platform/Godeps/_workspace/src/gopkg.in/redis.v2"
 )
 
 var HostMap map[string]string
@@ -91,6 +90,29 @@ func (batchItem BatchItem) NewExternalRequest(identityID string) (*http.Request,
 
 	return request, nil
 }
+
+// Create a request for this request batch item
+func (batchItem BatchItem) NewRequest(identityID string) (*http.Request, *errors.JsonError) {
+	var request *http.Request
+	var jsonErr *errors.JsonError
+	if strings.HasPrefix(batchItem.URL, "http") {
+		// Represents a request to an external system
+		request, jsonErr = batchItem.NewExternalRequest(identityID)
+		if jsonErr != nil {
+			log.Printf("An error occurred creating request: %s %+v", jsonErr, batchItem)
+			return request, jsonErr
+		}
+	} else {
+		// Represents a request to an internal system
+		request, jsonErr = batchItem.NewInternalRequest(identityID)
+		if jsonErr != nil {
+			log.Printf("An error occurred creating request: %s %+v", jsonErr, batchItem)
+			return request, jsonErr
+		}
+	}
+	return request, jsonErr
+}
+
 // Make a request for this batch item
 func (batchItem BatchItem) Do(request *http.Request) (BatchResponseItem, error) {
 	client := GetRequestClient()
@@ -113,27 +135,14 @@ func (batchItem BatchItem) Do(request *http.Request) (BatchResponseItem, error) 
 	return responseItem, nil
 }
 
-// Request a single item from the BatchItems
-func (batchItem BatchItem) RequestItem(response chan interface{}, identityID string) {
-	var request *http.Request
-	var jsonErr *errors.JsonError
-	if strings.HasPrefix(batchItem.URL, "http") {
-		// Represents a request to an external system
-		request, jsonErr = batchItem.NewExternalRequest(identityID)
-		if jsonErr != nil {
-			log.Printf("An error occurred creating request: %s %+v", jsonErr, batchItem)
-			response <- jsonErr
-			return
-		}
-	} else {
-		// Represents a request to an internal system
-		request, jsonErr = batchItem.NewInternalRequest(identityID)
-		if jsonErr != nil {
-			log.Printf("An error occurred creating request: %s %+v", jsonErr, batchItem)
-			response <- jsonErr
-			return
-		}
+// Request a single item from the BatchItems.  Meant to be used asynchronously using a channel.
+func (batchItem BatchItem) RequestItemAsync(response chan interface{}, identityID string) {
+	request, jsonErr := batchItem.NewRequest(identityID)
+	if jsonErr != nil {
+		response <- jsonErr
+		return
 	}
+
 	responseItem, err := batchItem.Do(request)
 	if err != nil {
 		log.Printf("An error occurred making request: %s %+v", err, batchItem)
@@ -142,6 +151,22 @@ func (batchItem BatchItem) RequestItem(response chan interface{}, identityID str
 	}
 
 	response <- responseItem
+}
+
+// Request a single item from the BatchItems.  Meant to be used asynchronously using a channel.
+func (batchItem BatchItem) RequestItem(identityID string) (BatchResponseItem, *errors.JsonError){
+	request, jsonErr := batchItem.NewRequest(identityID)
+	if jsonErr != nil {
+		return BatchResponseItem{}, jsonErr
+	}
+
+	responseItem, err := batchItem.Do(request)
+	if err != nil {
+		log.Printf("An error occurred making request: %s %+v", err, batchItem)
+		return responseItem, errors.New("An internal server error occurred", 500)
+	}
+
+	return responseItem, nil
 }
 
 type BatchItems []BatchItem
@@ -160,7 +185,7 @@ func (batchItems BatchItems) RunBatch(identityID string) (BatchResponse) {
 	batchResponseChans := make([]chan interface{}, len(batchItems))
 	for idx, batchItem := range batchItems {
 		batchResponseChans[idx] = make(chan interface{})
-		go batchItem.RequestItem(batchResponseChans[idx], identityID)
+		go batchItem.RequestItemAsync(batchResponseChans[idx], identityID)
 	}
 
 	batchResponse := make(BatchResponse, len(batchItems))
@@ -180,17 +205,10 @@ func (batchItems BatchItems) RunBatch(identityID string) (BatchResponse) {
 	return batchResponse
 }
 
-// Struct used to write to kafka an asynchronous batch item request
-type AsyncBatchItem struct {
-	RequestID string `json:"requestId"`
-	Index int `json:"idx"`
-	Item BatchItem `json:"item"`
-}
-
 // Runs all of the jobs in this list of batch items
 func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.JsonError) {
 
-	producer, err := NewAsyncBatchProducer(config.Get("zookeeper"))
+	producer, err := GetAsyncBatchProducer()
 	if err != nil {
 		return "", errors.New("An internal server error occurred.", 500)
 	}
@@ -200,12 +218,13 @@ func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.J
 	for idx, batchItem := range batchItems {
 		asyncItem := AsyncBatchItem{
 				RequestID: requestID,
-				Index: idx,
+				Index: int64(idx),
 				Item: batchItem,
+				IdentityID: identityID,
 			}
 		output, _ := json.Marshal(asyncItem)
 		message := &sarama.ProducerMessage{
-			Topic: config.Get("async_topic"),
+			Topic: config.Get("topic"),
 			Key: sarama.ByteEncoder(identityID + batchItem.URL),
 			Value: sarama.ByteEncoder(output),
 		}
@@ -222,25 +241,14 @@ func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.J
 	redis := GetAsyncJobRedis()
 	defer redis.Close()
 
-	redisCmd := redis.LPush(requestID, make([]string, len(batchItems)))
+	redisCmd := redis.LPush(requestID, make([]string, len(batchItems))...)
 	resultVal, err := redisCmd.Result()
 	if err != nil {
 		log.Printf("An error occurred saving new request to Redis: [status: %d] (error: %s)", resultVal, err)
 		return "", errors.New("An internal server error occurred.", 500)
+	} else {
+		log.Printf("New async batch request successfully sent to redis: [RequestID: %s] [Num Items: %d]", requestID, resultVal)
 	}
 
 	return requestID, nil
-}
-
-// Get a redis instance for the async jobs
-var GetAsyncJobRedis = func() (*redis.Client) {
-	return NewRedisClient(config.Get("redis_host"),
-		config.Get("redis_port"),
-		config.Get("redis_password"),
-		config.Get("redis_db"))
-}
-
-// Get the client to use for the http requests
-var GetRequestClient = func() (BatchClient) {
-	return &http.Client{}
 }
