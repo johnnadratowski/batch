@@ -34,6 +34,16 @@ func InitializeConfig() {
 		// Zookeeper/Kafka options
 		"zookeeper": config.EnvDefault("ZOOKEEPER", "localhost:2181"),
 		"async_topic": config.EnvDefault("ASYNC_TOPIC", "batch_asyc"),
+
+		// Redis
+		"redis_host":     config.EnvDefault("REDIS_HOST", "localhost"),
+		"redis_port":     config.EnvDefault("REDIS_PORT", "6379"),
+		"redis_db":       config.EnvDefault("REDIS_DB", "0"),
+		"redis_password": config.EnvDefault("REDIS_PASSWORD", ""),
+
+		// Workers
+		"workers":     config.EnvDefault("WORKERS", "0"),
+		"worker_sleep":     config.EnvDefault("WORKER_SLEEP", "500"),
 	}
 
 	for _, envVar := range os.Environ() {

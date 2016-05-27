@@ -11,6 +11,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/Unified/pmn/lib/config"
 	"github.com/pborman/uuid"
+	"github.com/Unified/platform/Godeps/_workspace/src/gopkg.in/redis.v2"
 )
 
 var HostMap map[string]string
@@ -189,7 +190,7 @@ type AsyncBatchItem struct {
 // Runs all of the jobs in this list of batch items
 func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.JsonError) {
 
-	producer, err := NewAsyncBatchProducer()
+	producer, err := NewAsyncBatchProducer(config.Get("zookeeper"))
 	if err != nil {
 		return "", errors.New("An internal server error occurred.", 500)
 	}
@@ -218,7 +219,25 @@ func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.J
 		}
 	}
 
+	redis := GetAsyncJobRedis()
+	defer redis.Close()
+
+	redisCmd := redis.LPush(requestID, make([]string, len(batchItems)))
+	resultVal, err := redisCmd.Result()
+	if err != nil {
+		log.Printf("An error occurred saving new request to Redis: [status: %d] (error: %s)", resultVal, err)
+		return "", errors.New("An internal server error occurred.", 500)
+	}
+
 	return requestID, nil
+}
+
+// Get a redis instance for the async jobs
+var GetAsyncJobRedis = func() (*redis.Client) {
+	return NewRedisClient(config.Get("redis_host"),
+		config.Get("redis_port"),
+		config.Get("redis_password"),
+		config.Get("redis_db"))
 }
 
 // Get the client to use for the http requests

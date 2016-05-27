@@ -72,6 +72,16 @@ MAX_BATCH_ASYNC_REQUESTS=10000 # Max number of requests a user can make in a sin
 # Zookeeper/Kafka Configs
 ZOOKEEPER=localhost:2181 # The connection string to the zookeeper node(s)
 ASYNC_TOPIC=batch_async # The kafka topic to use for async calls
+
+# Redis
+REDIS_HOST=localhost # The host that Redis is running on
+REDIS_PORT=6379 # The port that Redis is running on
+REDIS_DB=0 # The Redis db to connect to
+REDIS_PASSWORD= # The password to use to connect to Redis
+
+# Workers
+WORKERS=0 # The number of async workers to start with the webserver
+WORKER_SLEEP=500 # Number of milliseconds to sleep between worker processing
 ```
 
 ## Folder Structure

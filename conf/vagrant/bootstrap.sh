@@ -63,7 +63,10 @@ fi
 if ! command -v redis-server >/dev/null 2>&1; then
   echo "INSTALL REDIS"
   apt-get -y install redis-server
+  echo "bind 192.168.50.7" >> /etc/redis/redis.conf
 fi
+
+/etc/init.d/redis-server restart
 
 ###############################################
 ######### BUILD STEPS

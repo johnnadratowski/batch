@@ -10,8 +10,8 @@ import (
 
 // NewAsyncBatchProducer gets a new producer instance for producing batch item messages to kafka
 // Can be overridden for mocking kafka
-var NewAsyncBatchProducer = func() (sarama.SyncProducer, error) {
-	zookeeper, err := kazoo.NewKazooFromConnectionString(config.Get("zookeeper"), kazoo.NewConfig())
+var NewAsyncBatchProducer = func(zookeeperConn string) (sarama.SyncProducer, error) {
+	zookeeper, err := kazoo.NewKazooFromConnectionString(zookeeperConn, kazoo.NewConfig())
 	if err != nil {
 		log.Fatalln("An error occurred connecting to zookeeper", err)
 		return nil, err
