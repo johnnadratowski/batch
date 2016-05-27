@@ -13,6 +13,7 @@ import (
 	"github.com/Unified/pmn/lib/config"
 	"github.com/codegangsta/cli"
 	"strings"
+	"github.com/Shopify/sarama"
 )
 
 // Initializes the applications configuration
@@ -40,6 +41,7 @@ func InitializeConfig() {
 		"redis_port":     config.EnvDefault("REDIS_PORT", "6379"),
 		"redis_db":       config.EnvDefault("REDIS_DB", "0"),
 		"redis_password": config.EnvDefault("REDIS_PASSWORD", ""),
+		"async_expire": config.EnvDefault("ASYNC_EXPIRE", "60"),
 
 		// Workers
 		"workers":     config.EnvDefault("WORKERS", "0"),
@@ -73,6 +75,8 @@ func ConfigureServer() {
 		parts := strings.SplitN(key, "_", 1)
 		model.HostMap[parts[0]] = val
 	}
+
+	sarama.Logger = log.New(os.Stderr, "[Sarama] ", log.LstdFlags)
 }
 
 func main() {
@@ -95,15 +99,27 @@ func main() {
 			Handler:        route.Router(),
 		}
 
+		quit := make(chan bool, 1)
+		finished := make(chan bool, 1)
 		numWorkers := config.GetInt("workers")
 		if numWorkers > 0 {
-			for i := 0; i < numWorkers; i++ {
-				go model.StartAsyncWorker()
-			}
+			model.StartAsyncWorkers(numWorkers, quit, finished)
 		}
 
 		err := server.ListenAndServe()
 		log.Printf("Exiting Batch Server: %s", err)
+
+		if numWorkers > 0 {
+			log.Println("Quitting workers")
+			quit <- true
+
+			select {
+			case <-finished:
+				log.Println("All workers finished. Shutdown successfully")
+			case <-time.After(3 * time.Second):
+				log.Println("All workers DID NOT finished. Forcefully shutting down")
+			}
+		}
 	} else {
 		app := cli.NewApp()
 		app.Name = "Batch"

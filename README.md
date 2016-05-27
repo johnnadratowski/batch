@@ -78,6 +78,7 @@ REDIS_HOST=localhost # The host that Redis is running on
 REDIS_PORT=6379 # The port that Redis is running on
 REDIS_DB=0 # The Redis db to connect to
 REDIS_PASSWORD= # The password to use to connect to Redis
+ASYNC_EXPIRE=60 # Expiration time for new async request, in minutes
 
 # Workers
 WORKERS=0 # The number of async workers to start with the webserver

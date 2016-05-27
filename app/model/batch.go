@@ -11,6 +11,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/Unified/pmn/lib/config"
 	"github.com/pborman/uuid"
+	"time"
 )
 
 // Contains the mapping for internal services - like "pmn": "http://pmn-load-balancer:80/"
@@ -232,23 +233,32 @@ func (batchItems BatchItems) RunBatchAsync(identityID string) (string, *errors.J
 
 		partition, offset, err := producer.SendMessage(message)
 		if err != nil {
-			log.Println("An error occurred sending message to Kafka")
+			log.Println("An error occurred sending message to Kafka. (error: %s)", err)
 			return "", errors.New("An internal server error occurred.", 500)
 		} else {
-			log.Printf("Items successfully sent: [parition: %s] (offset: %s)", partition, offset)
+			log.Printf("Items successfully sent: [request id: %s] [parition: %s] (offset: %s)", requestID, partition, offset)
 		}
 	}
 
 	redis := GetAsyncJobRedis()
 	defer redis.Close()
 
-	redisCmd := redis.LPush(requestID, make([]string, len(batchItems))...)
-	resultVal, err := redisCmd.Result()
+	pushCmd := redis.LPush(requestID, make([]string, len(batchItems))...)
+	pushResult, err := pushCmd.Result()
 	if err != nil {
-		log.Printf("An error occurred saving new request to Redis: [status: %d] (error: %s)", resultVal, err)
+		log.Printf("An error occurred saving new request to Redis: [request id: %s] [Result: %d] (error: %s)", requestID, pushResult, err)
 		return "", errors.New("An internal server error occurred.", 500)
 	} else {
-		log.Printf("New async batch request successfully sent to redis: [RequestID: %s] [Num Items: %d]", requestID, resultVal)
+		log.Printf("New async batch request successfully sent to redis: [request id: %s] [Num Items: %d]", requestID, pushResult)
+	}
+
+
+	expireCmd := redis.Expire(requestID, time.Duration(config.GetInt("async_expire")) * time.Minute)
+	expireResult, err := expireCmd.Result()
+	if err != nil {
+		log.Printf("An error occurred saving new request to Redis: [request id: %s] [Expire set?: %b] (error: %s)", requestID, expireResult, err)
+	} else {
+		log.Printf("Expiration on new async batch request successfully sent to redis: [request id: %s] [Expire set?: %d]", requestID, expireResult)
 	}
 
 	return requestID, nil

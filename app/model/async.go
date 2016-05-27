@@ -47,21 +47,64 @@ var GetRequestClient = func() (BatchClient) {
 	return &http.Client{}
 }
 
-// Starts a new background worker task to process asynchronous batch items from kafka/redis
-func StartAsyncWorker() {
-	for {
-		time.Sleep(time.Duration(config.GetInt("worker_sleep")) * time.Millisecond)
+// Starts a bunch of background worker tasks to process asynchronous batch items from kafka/redis
+func StartAsyncWorkers(numWorkers int, quit chan bool, finished chan bool) {
+	quitWorkers := make([]chan bool, numWorkers)
+	finishedWorkers := make([]chan bool, numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		quitWorkers[i] = make(chan bool, 1)
+		finishedWorkers[i] = make(chan bool, 1)
+		go StartAsyncWorker(i, quitWorkers[i], finishedWorkers[i])
+	}
 
-		consumer, err := GetAsyncBatchConsumer()
-		if err != nil {
-			log.Printf("An error occurred connecting to consumer: %s", err)
-			continue
+	<-quit
+	go func() {
+		for idx, quitWorker := range quitWorkers {
+			log.Printf("Quitting worker: %d", idx)
+			quitWorker <- true
 		}
-		defer consumer.Close()
+	}()
 
-		redis := GetAsyncJobRedis()
+	for idx, finishedWorker := range finishedWorkers {
+		select {
+		case <-finishedWorker:
+			log.Println("Worker %d finished successfully.", idx)
+		case <-time.After(1 * time.Second):
+			log.Println("Worker %d DID NOT finish.", idx)
+		}
+	}
 
-		consumeMessages(consumer, redis)
+	finished <- true
+}
+
+// Starts a new background worker task to process asynchronous batch items from kafka/redis
+func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
+
+	consumer, err := GetAsyncBatchConsumer()
+	if err != nil {
+		log.Printf("An error occurred connecting to consumer: %s", err)
+	}
+
+	redis := GetAsyncJobRedis()
+
+	for {
+
+		select {
+		case <-quit:
+			log.Println("Interrupt detected on worker: ", workerNum)
+			go func(workerNum int) {
+				log.Println("Closing Consumer for worker: ", workerNum)
+				if err := consumer.Close(); err != nil {
+					sarama.Logger.Printf("Error closing the task consumer for worker %d: %s", workerNum, err)
+				}
+			}(workerNum)
+
+			finished <- true
+			return
+		case <-time.After(time.Duration(config.GetInt("worker_sleep")) * time.Millisecond):
+			consumeMessages(consumer, redis)
+		}
+
 	}
 }
 
@@ -84,7 +127,7 @@ func consumeMessages(consumer *consumergroup.ConsumerGroup, redis *redis.Client)
 		redisCheckCmd := redis.LIndex(batchItem.RequestID, batchItem.Index)
 		checkResult, err := redisCheckCmd.Result()
 		if err != nil {
-			log.Printf("An error occurred getting Redis info for request ID %s. [error: %s]", batchItem.RequestID, err)
+			log.Printf("An error occurred getting Redis info. [request ID: %s] [result: %s] (error: %s)", batchItem.RequestID, checkResult, err)
 			continue
 		}
 
@@ -140,5 +183,6 @@ func consumeMessages(consumer *consumergroup.ConsumerGroup, redis *redis.Client)
 				putResult)
 		}
 
+		consumer.CommitUpto(message)
 	}
 }
