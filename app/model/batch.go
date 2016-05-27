@@ -42,7 +42,7 @@ type BatchItem struct {
 
 // Get the URL to hit for an internal request batch item
 func (batchItem BatchItem) InternalURL() (string, *errors.JsonError) {
-	parts := strings.SplitN(batchItem.URL, "://", 1)
+	parts := strings.SplitN(batchItem.URL, "://", 2)
 	domain, found := HostMap[parts[0]]
 	if ! found {
 		log.Printf("An error occurred getting the batch URL for %s. Service unrecognized.", batchItem.URL)

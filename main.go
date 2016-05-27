@@ -23,7 +23,7 @@ func InitializeConfig() {
 
 		// Webserver
 		"host":             config.EnvDefault("HOST", "localhost"),
-		"port":             config.EnvDefault("PORT", "8080"),
+		"port":             config.EnvDefault("PORT", "8087"),
 		"read_timeout":     config.EnvDefault("READ_TIMEOUT", "300"),
 		"write_timeout":    config.EnvDefault("WRITE_TIMEOUT", "300"),
 		"max_header_bytes": config.EnvDefault("MAX_HEADER_BYTES", "0"),
@@ -34,7 +34,7 @@ func InitializeConfig() {
 
 		// Zookeeper/Kafka options
 		"zookeeper": config.EnvDefault("ZOOKEEPER", "localhost:2181"),
-		"topic": config.EnvDefault("TOPIC", "batch_asyc"),
+		"topic": config.EnvDefault("TOPIC", "batch_async"),
 
 		// Redis
 		"redis_host":     config.EnvDefault("REDIS_HOST", "localhost"),
@@ -52,7 +52,7 @@ func InitializeConfig() {
 	}
 
 	for _, envVar := range os.Environ() {
-		parts := strings.SplitN(envVar, "=", 1)
+		parts := strings.SplitN(envVar, "=", 2)
 		envKey := parts[0]
 		envVal := parts[1]
 
@@ -72,7 +72,7 @@ func ConfigureServer() {
 			continue
 		}
 
-		parts := strings.SplitN(key, "_", 1)
+		parts := strings.SplitN(key, "_", 2)
 		model.HostMap[parts[0]] = val
 	}
 

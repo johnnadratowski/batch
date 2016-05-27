@@ -39,6 +39,7 @@ func Router() (root *web.Router) {
 
 	batchRoot.Post("/batch", controller.Batch)
 	batchRoot.Post("/batch/async", controller.AsyncBatch)
+	batchRoot.Get("/batch/async/:requestID", controller.AsyncBatchRetrieve)
 
 	return
 }

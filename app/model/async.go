@@ -9,6 +9,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/wvanbergen/kafka/consumergroup"
 	"encoding/json"
+	"github.com/Unified/pmn/lib/errors"
 )
 
 // Struct used to write to kafka an asynchronous batch item request
@@ -52,6 +53,7 @@ func StartAsyncWorkers(numWorkers int, quit chan bool, finished chan bool) {
 	quitWorkers := make([]chan bool, numWorkers)
 	finishedWorkers := make([]chan bool, numWorkers)
 	for i := 0; i < numWorkers; i++ {
+		log.Printf("Starting worker: %d", i)
 		quitWorkers[i] = make(chan bool, 1)
 		finishedWorkers[i] = make(chan bool, 1)
 		go StartAsyncWorker(i, quitWorkers[i], finishedWorkers[i])
@@ -70,7 +72,7 @@ func StartAsyncWorkers(numWorkers int, quit chan bool, finished chan bool) {
 		case <-finishedWorker:
 			log.Println("Worker %d finished successfully.", idx)
 		case <-time.After(1 * time.Second):
-			log.Println("Worker %d DID NOT finish.", idx)
+			log.Printf("Worker %d DID NOT finish.", idx)
 		}
 	}
 
@@ -87,6 +89,7 @@ func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
 
 	redis := GetAsyncJobRedis()
 
+	log.Printf("Worker started: %d", workerNum)
 	for {
 
 		select {
@@ -95,7 +98,7 @@ func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
 			go func(workerNum int) {
 				log.Println("Closing Consumer for worker: ", workerNum)
 				if err := consumer.Close(); err != nil {
-					sarama.Logger.Printf("Error closing the task consumer for worker %d: %s", workerNum, err)
+					sarama.Logger.Printf("Error closing the consumer for worker %d: %s", workerNum, err)
 				}
 			}(workerNum)
 
@@ -108,9 +111,17 @@ func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
 	}
 }
 
+// Given a consumer, start consuming messages from the kafka queue, and retreive the batch information for each message
 func consumeMessages(consumer *consumergroup.ConsumerGroup, redis *redis.Client) {
 
 	for message := range consumer.Messages() {
+		log.Println("Got message: [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
+				message.Key,
+				message.Offset,
+				message.Partition,
+				message.Topic,
+				message.Value)
+
 		var batchItem AsyncBatchItem
 		err := json.Unmarshal(message.Value, &batchItem)
 		if err != nil {
@@ -122,67 +133,107 @@ func consumeMessages(consumer *consumergroup.ConsumerGroup, redis *redis.Client)
 				message.Value,
 				err)
 			continue
-		}
 
-		redisCheckCmd := redis.LIndex(batchItem.RequestID, batchItem.Index)
-		checkResult, err := redisCheckCmd.Result()
-		if err != nil {
-			log.Printf("An error occurred getting Redis info. [request ID: %s] [result: %s] (error: %s)", batchItem.RequestID, checkResult, err)
-			continue
-		}
-
-		if checkResult != "" {
-			log.Printf("Batch Item already processed: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-				batchItem.RequestID,
-				batchItem.Index,
-				message.Key,
-				message.Offset,
-				message.Partition,
-				message.Topic,
-				message.Value)
-			continue
-		}
-
-		response, jsonErr := batchItem.Item.RequestItem(batchItem.IdentityID)
-		if jsonErr != nil {
-			log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-				batchItem.RequestID,
-				message.Key,
-				message.Offset,
-				message.Partition,
-				message.Topic,
-				message.Value)
-			response = BatchResponseItem{
-				Code: 500,
-				Body: jsonErr,
+			redisCheckCmd := redis.LIndex(batchItem.RequestID, batchItem.Index)
+			checkResult, err := redisCheckCmd.Result()
+			if err != nil {
+				log.Printf("An error occurred getting Redis info. [request ID: %s] [result: %s] (error: %s)", batchItem.RequestID, checkResult, err)
+				continue
 			}
-		}
 
-		responseJson, _ := json.Marshal(response)
-		redisPutCmd := redis.LSet(batchItem.RequestID, batchItem.Index, string(responseJson))
-		putResult, err := redisPutCmd.Result()
-		if err != nil {
-			log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
-				batchItem.RequestID,
-				batchItem.Index,
-				message.Key,
-				message.Offset,
-				message.Partition,
-				message.Topic,
-				message.Value,
-				err)
-		} else {
-			log.Printf("Successfully processed batch item: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
-				batchItem.RequestID,
-				batchItem.Index,
-				message.Key,
-				message.Offset,
-				message.Partition,
-				message.Topic,
-				message.Value,
-				putResult)
-		}
+			if checkResult != "" {
+				log.Printf("Batch Item already processed: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
+					batchItem.RequestID,
+					batchItem.Index,
+					message.Key,
+					message.Offset,
+					message.Partition,
+					message.Topic,
+					message.Value)
+				continue
+			}
 
-		consumer.CommitUpto(message)
+			response, jsonErr := batchItem.Item.RequestItem(batchItem.IdentityID)
+			if jsonErr != nil {
+				log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
+					batchItem.RequestID,
+					message.Key,
+					message.Offset,
+					message.Partition,
+					message.Topic,
+					message.Value)
+				response = BatchResponseItem{
+					Code: 500,
+					Body: jsonErr,
+				}
+			}
+
+			responseJson, _ := json.Marshal(response)
+			redisPutCmd := redis.LSet(batchItem.RequestID, batchItem.Index, string(responseJson))
+			putResult, err := redisPutCmd.Result()
+			if err != nil {
+				log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
+					batchItem.RequestID,
+					batchItem.Index,
+					message.Key,
+					message.Offset,
+					message.Partition,
+					message.Topic,
+					message.Value,
+					err)
+			} else {
+				log.Printf("Successfully processed batch item: [request id: %s] [request index: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
+					batchItem.RequestID,
+					batchItem.Index,
+					message.Key,
+					message.Offset,
+					message.Partition,
+					message.Topic,
+					message.Value,
+					putResult)
+			}
+
+			consumer.CommitUpto(message)
+		}
 	}
+}
+
+func RetreiveAsyncResponse(requestID string) (BatchResponse, *errors.JsonError) {
+	redis := GetAsyncJobRedis()
+
+	existsCmd := redis.Exists(requestID)
+	existsResult, err := existsCmd.Result()
+	if err != nil {
+		log.Printf("An error occurred attempting to check if async batch request still exists: [request id: %s] (error: %s)", requestID, err)
+	} else {
+		log.Printf("Successfully retreived async job exists from redis. [request id: %s] (result: %s)", requestID, existsResult)
+		if !existsResult {
+			return BatchResponse{}, errors.New("The async batch request can not be found.  It may have expired.", 410)
+		}
+	}
+
+	getCmd := redis.LRange(requestID, 0, -1)
+	getResult, err := getCmd.Result()
+	if err != nil {
+		log.Printf("An error occurred attempting to get response data for async batch request: [request id: %s] (error: %s)", requestID, err)
+	} else {
+		log.Printf("Successfully retreived async response data from redis. [request id: %s] (result: %s)", requestID, getResult)
+	}
+
+	// Check responses first to see if it's finished
+	for _, response := range getResult {
+		if response == "" {
+			return BatchResponse{}, nil
+		}
+	}
+
+	batchResponse := make(BatchResponse, len(getResult))
+	for idx, response := range getResult {
+		var responseItem BatchResponseItem
+		_ = json.Unmarshal([]byte(response), &responseItem)
+		batchResponse[idx] = responseItem
+	}
+
+	return batchResponse, nil
+
 }
