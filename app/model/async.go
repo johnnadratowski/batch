@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"fmt"
 )
 
 // Struct used to write to kafka an asynchronous batch item request
@@ -80,28 +81,35 @@ func StartAsyncWorkers(numWorkers int, quit chan bool, finished chan bool) {
 
 // Starts a new background worker task to process asynchronous batch items from kafka/redis
 func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
+	sleepDuration := time.Duration(config.GetInt("worker_sleep")) * time.Millisecond
 
+	// Keep worker alive if it dies
+	defer func() {
+		if r := recover(); r != nil {
+		    	fmt.Printf("Worker %d died. Restarting in 1 seconds. (error: %s)", workerNum, r)
+		    	time.Sleep(sleepDuration)
+			StartAsyncWorker(workerNum, quit, finished)
+		}
+	}()
+
+	redis := GetAsyncJobRedis()
 	consumer, err := GetAsyncBatchConsumer()
 	if err != nil {
 		log.Printf("An error occurred connecting to consumer: %s", err)
 	}
 
-	redis := GetAsyncJobRedis()
-
 	log.Printf("Worker started: %d", workerNum)
 
-	sleepDuration := time.Duration(config.GetInt("worker_sleep")) * time.Millisecond
+
 	for {
 		time.Sleep(sleepDuration)
 
 		select {
 		case <-quit:
-			log.Println("Interrupt detected on worker: ", workerNum)
-			log.Println("Closing Consumer for worker: ", workerNum)
+			log.Println("Interrupt detected. Closing Consumer on worker: ", workerNum)
 			if err := consumer.Close(); err != nil {
 				sarama.Logger.Printf("Error closing the consumer for worker %d: %s", workerNum, err)
 			}
-
 			finished <- true
 			return
 		case message := <-consumer.Messages():
@@ -115,23 +123,12 @@ func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
 // Process a single consumer message
 func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.ConsumerGroup, redis *redis.Client) {
 
-	log.Printf("Got message: [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-		message.Key,
-		message.Offset,
-		message.Partition,
-		message.Topic,
-		message.Value)
+	log.Printf("Got message: [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]", message.Key, message.Offset, message.Partition, message.Topic, message.Value)
 
 	var batchItem AsyncBatchItem
 	err := json.Unmarshal(message.Value, &batchItem)
 	if err != nil {
-		log.Printf("This shouldn't happen. We put this JSON into the Kafka queue and it should always be properly formatted. [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
-			message.Key,
-			message.Offset,
-			message.Partition,
-			message.Topic,
-			message.Value,
-			err)
+		log.Printf("This shouldn't happen. We put this JSON into the Kafka queue and it should always be properly formatted. [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)", message.Key, message.Offset, message.Partition, message.Topic, message.Value, err)
 		return
 	}
 
@@ -143,26 +140,13 @@ func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.Con
 	}
 
 	if checkResult != "" {
-		log.Printf("Batch Item already processed: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-			batchItem.RequestID,
-			batchItem.Index,
-			message.Key,
-			message.Offset,
-			message.Partition,
-			message.Topic,
-			message.Value)
+		log.Printf("Batch Item already processed: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]", batchItem.RequestID, batchItem.Index, message.Key, message.Offset, message.Partition, message.Topic, message.Value)
 		return
 	}
 
 	response, jsonErr := batchItem.Item.RequestItem(batchItem.IdentityID)
 	if jsonErr != nil {
-		log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]",
-			batchItem.RequestID,
-			message.Key,
-			message.Offset,
-			message.Partition,
-			message.Topic,
-			message.Value)
+		log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]", batchItem.RequestID, message.Key, message.Offset, message.Partition, message.Topic, message.Value)
 		response = BatchResponseItem{
 			Code: 500,
 			Body: jsonErr.Msg(),
@@ -173,30 +157,15 @@ func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.Con
 	redisPutCmd := redis.LSet(batchItem.RequestID, batchItem.Index, string(responseJson))
 	putResult, err := redisPutCmd.Result()
 	if err != nil {
-		log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)",
-			batchItem.RequestID,
-			batchItem.Index,
-			message.Key,
-			message.Offset,
-			message.Partition,
-			message.Topic,
-			message.Value,
-			err)
+		log.Printf("An error occurred putting batch item response into Redis: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (error: %s)", batchItem.RequestID, batchItem.Index, message.Key, message.Offset, message.Partition, message.Topic, message.Value, err)
 	} else {
-		log.Printf("Successfully processed batch item: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)",
-			batchItem.RequestID,
-			batchItem.Index,
-			message.Key,
-			message.Offset,
-			message.Partition,
-			message.Topic,
-			message.Value,
-			putResult)
+		log.Printf("Successfully processed batch item: [request id: %s] [request index: %d] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s] (result: %s)", batchItem.RequestID, batchItem.Index, message.Key, message.Offset, message.Partition, message.Topic, message.Value, putResult)
 	}
 
 }
 
-func RetreiveAsyncResponse(requestID string) (BatchResponse, *errors.JsonError) {
+// Get a response for an async request
+func RetrieveAsyncResponse(requestID string) (BatchResponse, *errors.JsonError) {
 	redis := GetAsyncJobRedis()
 
 	existsCmd := redis.Exists(requestID)

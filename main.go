@@ -39,7 +39,7 @@ func main() {
 		finished := make(chan bool, 1)
 		numWorkers := config.GetInt("workers")
 		if numWorkers > 0 {
-			model.StartAsyncWorkers(numWorkers, quit, finished)
+			go model.StartAsyncWorkers(numWorkers, quit, finished)
 		}
 
 		err := server.ListenAndServe()

@@ -20,7 +20,7 @@ func Batch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 	}
 
 	if len(batchItems) > config.GetInt("max_batch_requests") {
-		errors.Write(rw, 400, "Too many batch requests at once. Max allowed: %d", config.GetInt("max_batch_requests"))
+		errors.Write(rw, 400, "Too many batch requests at once. Max allowed: %d Sent: %d", config.GetInt("max_batch_requests"), len(batchItems))
 		return
 	} else if len(batchItems) == 0 {
 		errors.Write(rw, 400, "No batch items recieved")
@@ -35,7 +35,6 @@ func Batch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 		errors.Write(rw, 500, "An internal server error occurred")
 		return
 	}
-
 }
 
 // AsyncBatch processes batch requests asynchronously
@@ -67,11 +66,10 @@ func AsyncBatch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 // AsyncBatchRetrieve retrieves an asynchronous batch requests data
 func AsyncBatchRetrieve(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 	requestID := req.PathParams["requestID"]
-	batchResponse, jsonErr := model.RetreiveAsyncResponse(requestID)
+	batchResponse, jsonErr := model.RetrieveAsyncResponse(requestID)
 	if jsonErr != nil {
 		jsonErr.Write(rw)
 	} else if len(batchResponse) == 0 {
-
 		rw.Header().Set("LOCATION", "/batch/async/"+requestID)
 		rw.WriteHeader(202)
 	} else {
