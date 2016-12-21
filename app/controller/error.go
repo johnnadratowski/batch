@@ -7,15 +7,14 @@ import (
 
 	"github.com/gocraft/web"
 
-	"github.com/Unified/batch/app/context"
-	"github.com/Unified/pmn/lib/errors"
+	"github.com/johnnadratowski/batch/app/context"
 )
 
 func Error(c *context.Context, rw web.ResponseWriter, req *web.Request, err interface{}) {
 	rw.WriteHeader(http.StatusInternalServerError)
 
-	jsonErr := errors.New("Internal Server Error", 500)
-	fmt.Fprint(rw, jsonErr)
+	err = fmt.Errorf("Internal Server Error")
+	fmt.Fprint(rw, err)
 
 	log.Println("*******************************************************************")
 	log.Println("*****************A panic occurred during processing!***************")

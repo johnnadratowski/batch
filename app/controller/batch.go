@@ -1,29 +1,36 @@
 package controller
 
 import (
+	"github.com/Unified/golang-lib/lib/errors"
 	"github.com/gocraft/web"
 
 	"encoding/json"
-	"github.com/Unified/batch/app/context"
-	"github.com/Unified/batch/app/model"
-	"github.com/Unified/pmn/lib/config"
-	"github.com/Unified/pmn/lib/errors"
+	"fmt"
 	"log"
+
+	"github.com/johnnadratowski/batch/app/context"
+	"github.com/johnnadratowski/batch/app/model"
 )
+
+var MAX_REQUESTS int = 1000
+var MAX_REQUESTS_ASYNC int = 10000
 
 // Batch processes batch requests
 func Batch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 	var batchItems model.BatchItems
 	if err := json.NewDecoder(req.Body).Decode(&batchItems); err != nil {
-		errors.Write(rw, 400, "Unable to parse request body JSON")
+		err := fmt.Errorf("Unable to parse JSON")
+		fmt.Fprint(rw, err)
 		return
 	}
 
-	if len(batchItems) > config.GetInt("max_batch_requests") {
-		errors.Write(rw, 400, "Too many batch requests at once. Max allowed: %d Sent: %d", config.GetInt("max_batch_requests"), len(batchItems))
+	if len(batchItems) > MAX_REQUESTS {
+		err := fmt.Errorf("Too many batch requests at once. Max allowed: %d Sent: %d", MAX_REQUESTS, len(batchItems))
+		fmt.Fprint(rw, err)
 		return
 	} else if len(batchItems) == 0 {
-		errors.Write(rw, 400, "No batch items recieved")
+		err := fmt.Errorf("No batch items recieved")
+		fmt.Fprint(rw, err)
 		return
 	}
 
@@ -41,21 +48,24 @@ func Batch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 func AsyncBatch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 	var batchItems model.BatchItems
 	if err := json.NewDecoder(req.Body).Decode(&batchItems); err != nil {
-		errors.Write(rw, 400, "Unable to parse request body JSON")
+		err := fmt.Errorf("Unable to parse JSON")
+		fmt.Fprint(rw, err)
 		return
 	}
 
-	if len(batchItems) > config.GetInt("max_batch_requests_async") {
-		errors.Write(rw, 400, "Too many async batch requests at once. Max allowed: %d", config.GetInt("max_batch_requests_async"))
+	if len(batchItems) > MAX_REQUESTS_ASYNC {
+		err := fmt.Errorf("Too many async batch requests at once. Max allowed: %d Sent: %d", MAX_REQUESTS, len(batchItems))
+		fmt.Fprint(rw, err)
 		return
 	} else if len(batchItems) == 0 {
-		errors.Write(rw, 400, "No batch items recieved")
+		err := fmt.Errorf("No batch items recieved")
+		fmt.Fprint(rw, err)
 		return
 	}
 
-	requestID, jsonErr := batchItems.RunBatchAsync(c.IdentityID)
-	if jsonErr != nil {
-		jsonErr.Write(rw)
+	requestID, err := batchItems.RunBatchAsync(c.IdentityID)
+	if err != nil {
+		fmt.Fprint(rw, err)
 		return
 	}
 
@@ -66,9 +76,10 @@ func AsyncBatch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 // AsyncBatchRetrieve retrieves an asynchronous batch requests data
 func AsyncBatchRetrieve(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 	requestID := req.PathParams["requestID"]
-	batchResponse, jsonErr := model.RetrieveAsyncResponse(requestID)
-	if jsonErr != nil {
-		jsonErr.Write(rw)
+	batchResponse, err := model.RetrieveAsyncResponse(requestID)
+	if err != nil {
+		fmt.Fprint(rw, err)
+		return
 	} else if len(batchResponse) == 0 {
 		rw.Header().Set("LOCATION", "/batch/async/"+requestID)
 		rw.WriteHeader(202)

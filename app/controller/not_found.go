@@ -6,17 +6,15 @@ import (
 
 	"github.com/gocraft/web"
 
-	"github.com/Unified/batch/app/context"
-	"github.com/Unified/pmn/lib/errors"
-	webLib "github.com/Unified/pmn/lib/web"
+	"github.com/johnnadratowski/batch/app/context"
 )
 
 // Not found is the catch-all endpoint for when no endpoint is found
 func NotFound(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 	if req.Method == "OPTIONS" {
-		webLib.Write204(rw)
+		rw.WriteHeader(204)
 	} else {
 		rw.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(rw, errors.New("Not Found", 404).Error())
+		fmt.Fprintf(rw, fmt.Errorf("Not Found").Error())
 	}
 }

@@ -7,13 +7,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/Unified/batch/app/command"
-	"github.com/Unified/batch/app/model"
-	"github.com/Unified/batch/app/route"
-	"github.com/Unified/batch/app/server"
-	"github.com/Unified/pmn/lib/config"
+	"github.com/johnnadratowski/batch/app/command"
+	"github.com/johnnadratowski/batch/app/model"
+	"github.com/johnnadratowski/batch/app/route"
+	"github.com/johnnadratowski/batch/app/server"
 	"github.com/codegangsta/cli"
 )
+
+var HOST string = ""
+var PORT string = ""
+var WORKERS int = 10
 
 func main() {
 	server.InitializeConfig()
@@ -23,21 +26,16 @@ func main() {
 	if len(os.Args) == 1 {
 		log.Println("Starting Batch Server")
 
-		config.Log()
-
-		listen := fmt.Sprintf("%s:%s", config.Get("host"), config.Get("port"))
+		listen := fmt.Sprintf("%s:%s", HOST, PORT)
 
 		server := &http.Server{
 			Addr:           listen,
-			ReadTimeout:    time.Duration(config.GetInt("read_timeout")) * time.Second,
-			WriteTimeout:   time.Duration(config.GetInt("write_timeout")) * time.Second,
-			MaxHeaderBytes: config.GetInt("max_header_bytes"),
 			Handler:        route.Router(),
 		}
 
 		quit := make(chan bool, 1)
 		finished := make(chan bool, 1)
-		numWorkers := config.GetInt("workers")
+		numWorkers := WORKERS
 		if numWorkers > 0 {
 			go model.StartAsyncWorkers(numWorkers, quit, finished)
 		}

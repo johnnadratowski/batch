@@ -2,16 +2,28 @@ package model
 
 import (
 	"encoding/json"
-	"github.com/Shopify/sarama"
-	"github.com/Unified/pmn/lib/config"
-	"github.com/Unified/pmn/lib/errors"
-	"github.com/wvanbergen/kafka/consumergroup"
-	"gopkg.in/redis.v2"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
-	"fmt"
+
+	"github.com/Shopify/sarama"
+	"github.com/wvanbergen/kafka/consumergroup"
+	"gopkg.in/redis.v2"
 )
+
+var REDIS_HOST string = "default"
+var REDIS_PORT string = "default"
+var REDIS_PW string = "default"
+var REDIS_DB int = 0
+var ZOOKEEPER string = "default"
+var CONSUMERGROUP string = "default"
+var TOPIC string = "default"
+var HEAD_OFFSETS int64 = 0
+var RESET_OFFSETS bool = false
+var WORKER_SLEEP int = 100
+var ASYNC_EXPIRE int = 1000
 
 // Struct used to write to kafka an asynchronous batch item request
 type AsyncBatchItem struct {
@@ -23,24 +35,24 @@ type AsyncBatchItem struct {
 
 // Get a redis instance for the async jobs
 var GetAsyncJobRedis = func() *redis.Client {
-	return NewRedisClient(config.Get("redis_host"),
-		config.Get("redis_port"),
-		config.Get("redis_password"),
-		config.Get("redis_db"))
+	return NewRedisClient(REDIS_HOST,
+		REDIS_PORT,
+		REDIS_PW,
+		strconv.Itoa(REDIS_DB))
 }
 
 // Get the kafka producer for asynchronous batch requests
 var GetAsyncBatchProducer = func() (sarama.SyncProducer, error) {
-	return NewAsyncBatchProducer(config.Get("zookeeper"))
+	return NewAsyncBatchProducer(ZOOKEEPER)
 }
 
 // Get the kafka consumer for asynchronous batch requests
 var GetAsyncBatchConsumer = func() (*consumergroup.ConsumerGroup, error) {
-	return NewAsyncBatchConsumer(config.Get("zookeeper"),
-		config.Get("consumer_group"),
-		config.Get("topic"),
-		config.GetInt64("head_offsets"),
-		config.IsTrue("reset_offsets", false))
+	return NewAsyncBatchConsumer(ZOOKEEPER,
+		CONSUMERGROUP,
+		TOPIC,
+		HEAD_OFFSETS,
+		RESET_OFFSETS)
 }
 
 // Get the client to use for the http requests
@@ -81,13 +93,13 @@ func StartAsyncWorkers(numWorkers int, quit chan bool, finished chan bool) {
 
 // Starts a new background worker task to process asynchronous batch items from kafka/redis
 func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
-	sleepDuration := time.Duration(config.GetInt("worker_sleep")) * time.Millisecond
+	sleepDuration := time.Duration(WORKER_SLEEP) * time.Millisecond
 
 	// Keep worker alive if it dies
 	defer func() {
 		if r := recover(); r != nil {
-		    	fmt.Printf("Worker %d died. Restarting in 1 seconds. (error: %s)", workerNum, r)
-		    	time.Sleep(sleepDuration)
+			fmt.Printf("Worker %d died. Restarting in 1 seconds. (error: %s)", workerNum, r)
+			time.Sleep(sleepDuration)
 			StartAsyncWorker(workerNum, quit, finished)
 		}
 	}()
@@ -99,7 +111,6 @@ func StartAsyncWorker(workerNum int, quit chan bool, finished chan bool) {
 	}
 
 	log.Printf("Worker started: %d", workerNum)
-
 
 	for {
 		time.Sleep(sleepDuration)
@@ -144,12 +155,12 @@ func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.Con
 		return
 	}
 
-	response, jsonErr := batchItem.Item.RequestItem(batchItem.IdentityID)
-	if jsonErr != nil {
+	response, err := batchItem.Item.RequestItem(batchItem.IdentityID)
+	if err != nil {
 		log.Printf("An error occurred requesting batch item: [request id: %s] [key: %s] [offset: %d] [partition: %d] [topid: %s] [value: %s]", batchItem.RequestID, message.Key, message.Offset, message.Partition, message.Topic, message.Value)
 		response = BatchResponseItem{
 			Code: 500,
-			Body: jsonErr.Msg(),
+			Body: err,
 		}
 	}
 
@@ -165,7 +176,7 @@ func processMessage(message *sarama.ConsumerMessage, consumer *consumergroup.Con
 }
 
 // Get a response for an async request
-func RetrieveAsyncResponse(requestID string) (BatchResponse, *errors.JsonError) {
+func RetrieveAsyncResponse(requestID string) (BatchResponse, error) {
 	redis := GetAsyncJobRedis()
 
 	existsCmd := redis.Exists(requestID)
@@ -175,7 +186,7 @@ func RetrieveAsyncResponse(requestID string) (BatchResponse, *errors.JsonError) 
 	} else {
 		log.Printf("Successfully retreived async job exists from redis. [request id: %s] (result: %t)", requestID, existsResult)
 		if !existsResult {
-			return BatchResponse{}, errors.New("The async batch request can not be found.  It may have expired.", 410)
+			return BatchResponse{}, fmt.Errorf("The async batch request can not be found.  It may have expired.")
 		}
 	}
 
