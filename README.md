@@ -21,6 +21,7 @@ go build
 # Configuration
 
 ** NOTE: STILL HAVE TO SET UP CONFIG MECHANISM**
+
 Configuration is done solely through env variables.  You can easily see what configuration values the system supports by looking at app/config.go.  However, whenever a new configuration value is added, it should be documented here, with it's default value.
 
 ```sh
