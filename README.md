@@ -1,41 +1,13 @@
 # Batch
 
-Microservice implementing batch commands for queries to other microservices
+**NOTE: This was an experiment and is not 100% production ready.  If someone is interested in me finishing this project, just open a ticket.**
+
+Microservice implementing batch commands for queries to other microservices.  You can do synchronous batches and asynchronous batches.  For asynchronous batches, you can poll to see if its done.  Utilizes Redis and Kafka to handle the asynchronous batching.
 
 # Quick Start
 
-[Download](https://golang.org/dl/) and [Install](https://golang.org/doc/install) Golang 1.4.
-
-[Make sure your GOROOT, GOPATH, and PATH environment variables are set properly!](https://golang.org/doc/code.html)
-
-// TODO: Put in how to set up go
 
 ```sh
-# DOWNLOAD GOLANG
-# ON LINUX
-wget https://storage.googleapis.com/golang/go1.4.2.linux-amd64.tar.g://storage.googleapis.com/golang/go1.4.2.linux-amd64.tar.gz 
-# ON MAC
-wget https://storage.googleapis.com/golang/go1.4.2.darwin-amd64-osx10.8.tar.gz
-
-# INSTALLING GO
-tar -C /usr/local -xzf ./go1.4.2.linux-amd64.tar.gz
-
-# INSTALLING GOLANG DEPENDENCIES
-# SHOULD INSTALL GIT AND MERCURIAL FOR ‘GO GET’ COMMAND
-
-# SETTING UP GOPATH - YOU SHOULD ADD THESE TO YOUR BASHRC or ZSHRC
-export GOPATH=~/go #or whereever you want
-export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
-
-# SETTING UP DEPENDENCIES
-go get github.com/tools/godep
-go install github.com/tools/godep
-mkdir -p $GOPATH/src/github.com/Unified/
-cd $GOPATH/src/github.com/Unified/
-git clone git@github.com:Unified/batch.git
-cd $GOPATH/src/github.com/Unified/batch
-godep restore
-
 # INSTALL HOOKS 
 ./conf/setup/setup-hooks.sh
 

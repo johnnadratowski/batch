@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"github.com/Unified/golang-lib/lib/errors"
 	"github.com/gocraft/web"
 
 	"encoding/json"
@@ -39,7 +38,7 @@ func Batch(c *context.Context, rw web.ResponseWriter, req *web.Request) {
 	err := json.NewEncoder(rw).Encode(batchResponse)
 	if err != nil {
 		log.Printf("An error occurred writing response: %s", err)
-		errors.Write(rw, 500, "An internal server error occurred")
+		fmt.Fprint(rw, "An internal server error occurred")
 		return
 	}
 }
@@ -87,7 +86,7 @@ func AsyncBatchRetrieve(c *context.Context, rw web.ResponseWriter, req *web.Requ
 		err := json.NewEncoder(rw).Encode(batchResponse)
 		if err != nil {
 			log.Printf("An error occurred writing response: %s", err)
-			errors.Write(rw, 500, "An internal server error occurred")
+			fmt.Fprint(rw, "An internal server error occurred")
 			return
 		}
 	}

@@ -13,7 +13,7 @@ import (
 	"fmt"
 )
 
-// Contains the mapping for internal services - like "pmn": "http://pmn-load-balancer:80/"
+// Contains the mapping for internal services
 var HostMap map[string]string
 
 // Interface for the http method "Do", useful for mocking requests/responses
@@ -71,7 +71,7 @@ func (batchItem BatchItem) NewInternalRequest(identityID string) (*http.Request,
 	for header, val := range batchItem.Headers {
 		request.Header.Add(header, val)
 	}
-	request.Header.Add("X-Unified-IdentityID", identityID)
+	request.Header.Add("X-IdentityID", identityID)
 	return request, nil
 }
 
